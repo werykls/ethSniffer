@@ -12,7 +12,6 @@ int getInterfaces();
 std::string interface;
 
 int raw_socket;
-int notIPcounter = 0;
 
 int init(){
     
@@ -46,42 +45,11 @@ int main(int args, char *chars[]){
     // Buffer to hold the incoming packet data
     unsigned char buffer[65536];
     
-    for(int j = 0; j < 5; j++){
+    while(true){
         //Receive data from the socket
         ssize_t data_size = recvfrom(raw_socket, buffer, sizeof(buffer), 0, nullptr, nullptr);
         
-        std::cout << "\nPakiet nr: " << j << std::endl;
 
-        unsigned char *byte = buffer;
-        for(int i = 0; i < data_size; i++){
-            std:: cout << int(*(byte + i)) << " ";
-        }
-        std::cout << std::endl;
-
- //Cast the beginning of the buffer to an Ethernet header struct
-        struct ether_header *eth_hdr = reinterpret_cast<struct ether_header *>(buffer);
-
-        std::cout << "\nPacket captured! Size: " << data_size << "bytes" << std::endl;
-
-        //Print Destination MAC address
-        std::cout << "Destination MAC: " ;
-        for (int i = 0; i < 6; i++){
-            printf("%02X%s", eth_hdr -> ether_dhost[i], (i < 5)? ":" : " ");
-        }
-        std::cout << std::endl;
-
-        //Print Source MAC address
-        std::cout << "Source MAC: " ;
-        for (int i = 0; i < 6; i++){
-            printf("%02X%s", eth_hdr -> ether_shost[i], (i < 5)? ":" : " ");
-        }
-        std::cout << std::endl;
-
-        //Print the Ethernet type
-        printf("Protocol/Type : 0x%04X\n", ntohs(eth_hdr -> ether_type));
-
-        continue;
-        /*
         if(data_size < 0){
             std::cout << "Failed to receive data" << std::endl;
             break;
@@ -90,7 +58,7 @@ int main(int args, char *chars[]){
         //Cast the beginning of the buffer to an Ethernet header struct
         struct ether_header *eth_hdr = reinterpret_cast<struct ether_header *>(buffer);
 
-        std::cout << "\nPacket captured! Size: " << data_size << "bytes" << std::endl;
+        std::cout << "Packet captured! Size: " << data_size << "bytes" << std::endl;
 
         //Print Destination MAC address
         std::cout << "Destination MAC: " ;
@@ -109,11 +77,9 @@ int main(int args, char *chars[]){
         //Print the Ethernet type
         printf("Protocol/Type : 0x%04X\n", ntohs(eth_hdr -> ether_type));
 
-        if(ntohs(eth_hdr -> ether_type) != 0x0800)notIPcounter++;
-*/
     }
 
-    std::cout << std::endl << notIPcounter;
+
 
     close(raw_socket);
     return 0;
