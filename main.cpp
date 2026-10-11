@@ -1,84 +1,147 @@
 #include <iostream>
 #include <unistd.h>
+#include <iomanip>
 
 #include <ifaddrs.h> //fetching network interfaces names
+// #include <fcntl.h> //socket files descriptors manipulation
+
 
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/if_ether.h>
 
+#include "frame.h"
+
+//#define debug
+//#define fileDescriptionManipulations
 
 int getInterfaces();
 std::string interface;
 
-int raw_socket;
+int raw_socket; //socket
+int packetLimiter; // The limit of packets to capture provided by user
 
-int init(){
-    
-    getInterfaces();
+enum filtering{
+    ALL,
+    OUTGOING,
+    LOOPBACK
+};
+
+enum filtering filter;
+
+int init(int args, char *argv[]){
+    std::cout << "args number: " << args << std::endl;
+    // getInterfaces();
     // std::cin >> interface;
     
     // Create a raw socket to capture all Ethernet frames (ETH_P_ALL)
     // htons() converts the constant to network byte order
     raw_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-
-
-
-
     if (raw_socket < 0) {
         std::cerr << "Error: Could not create socket. Are you running as root/sudo?" << std::endl;
         return 1;
     }
+
+    packetLimiter = std::stoi(argv[2]);
+
+    std::cout << "Filtering mode: ";
+    if(std::string_view(argv[1]) == "ALL"){
+        std::cout << "ALL" << std::endl;
+        filter = filtering::ALL;
+        return 0;
+    }
+    else if(std::string_view(argv[1]) == "OUTGOING"){
+        std::cout << "OUTGOING" << std::endl;
+        filter = filtering::OUTGOING;
+        return 0;
+    }
+    else if(std::string_view(argv[1]) == "LOOPBACK"){
+        std::cout << "LOOPBACK" << std::endl;
+        filter = filtering::LOOPBACK;
+        return 0;
+    }
+
+    #ifdef fileDescriptionManipulations
+    // changing socket mode to BLOCKING
+    int flags = fcntl(raw_socket, F_GETFL, 0);
+    std::cout << flags << std::endl;
+    (flags & O_NONBLOCK)?std::cout << "Socket nie blokujacy": std::cout << "Socket blokujacty"; std::cout << std::endl;
+    //(fcntl(raw_socket, F_SETFL, flags bitor O_NONBLOCK) == 0)? std::cout << "udalo sie zmienic" : std::cout << "nie udalo sie zmienic"; std::cout<< std::endl;
+    
+    flags = fcntl(raw_socket, F_GETFL, 0);
+    std::cout << "po zmianie || " << (flags bitor O_NONBLOCK) << std::endl;
+    std::cout << flags << std::endl;
+    (flags & O_NONBLOCK)?std::cout << "Socket nie blokujacy": std::cout << "Socket blokujacty"; std::cout << std::endl;
+    #endif
+
+
+    
 
     return 0;
 }
 
 
 
-int main(int args, char *chars[]){
+int main(int args, char *argv[]){
 
-    if(int er = init())return er;
+    if(int er = init(args, argv))return er;
+
 
     std::cout << "Listening for incoming Ethernet frames..." << std::endl;
-    
     
     // Buffer to hold the incoming packet data
     unsigned char buffer[65536];
     
+    int packetNumber = 0;
+    ssize_t data_size;
     while(true){
-        //Receive data from the socket
-        ssize_t data_size = recvfrom(raw_socket, buffer, sizeof(buffer), 0, nullptr, nullptr);
-        
+        //The limiter for packet retriving passed by argv
+        if(packetNumber == packetLimiter)return 0;
 
+        //Receive data from the socket
+        data_size = recvfrom(raw_socket, buffer, sizeof(buffer), 0, nullptr, nullptr);
+        
+        
         if(data_size < 0){
-            std::cout << "Failed to receive data" << std::endl;
-            break;
+            std::cout << "Failed to receive data" << data_size << std::endl;
+            continue;
         }
 
         //Cast the beginning of the buffer to an Ethernet header struct
         struct ether_header *eth_hdr = reinterpret_cast<struct ether_header *>(buffer);
+        
+        //Custom object for handling frame's data
+        Frame frame = Frame(buffer);
+        
+        //eth frames basic filtering 
+        if(filter == filtering::OUTGOING){
+            if(frame.getMACnumeric(MAC::DESTINATION) == 0 and frame.getMACnumeric(MAC::SOURCE) == 0)continue;
+        }
 
-        std::cout << "Packet captured! Size: " << data_size << "bytes" << std::endl;
-
-        //Print Destination MAC address
-        std::cout << "Destination MAC: " ;
-        for (int i = 0; i < 6; i++){
-            printf("%02X%s", eth_hdr -> ether_dhost[i], (i < 5)? ":" : " ");
+        
+        
+        std::cout << std::dec;
+        std::cout << "\nPakiet nr: " << packetNumber << std::endl;
+        packetNumber++;
+        
+        std::cout << "\nPacket captured! Size: " << data_size << " bytes" << std::endl;
+        
+        #ifdef debug
+        //unsigned char *byte = buffer;
+        for(int i = 0; i < data_size - 1; i++){
+            std:: cout << std::setw(2) << std::setfill('0') << std::hex <<  int(buffer[i]) << " ";
         }
         std::cout << std::endl;
-
-        //Print Source MAC address
-        std::cout << "Source MAC: " ;
-        for (int i = 0; i < 6; i++){
-            printf("%02X%s", eth_hdr -> ether_shost[i], (i < 5)? ":" : " ");
-        }
-        std::cout << std::endl;
-
-        //Print the Ethernet type
-        printf("Protocol/Type : 0x%04X\n", ntohs(eth_hdr -> ether_type));
-
+        #endif
+        
+        
+        //printing frames data 
+        frame.printDestinationMAC();
+        frame.printSourceMAC();
+        frame.printFrameType();
+        
+        
     }
-
 
 
     close(raw_socket);
