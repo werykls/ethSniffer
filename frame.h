@@ -2,17 +2,20 @@
 
 #define MAC_ADDERSS_SIZE_B 6
 
-enum MAC{
+enum class MAC{
     DESTINATION,
     SOURCE
 };
 
 class Frame{
+    uint8_t *buffer;
     public: 
-        uint8_t dhost[MAC_ADDERSS_SIZE_B];
-        uint8_t shost[MAC_ADDERSS_SIZE_B];
-        uint8_t type;
-    
+        static const uint8_t headerSize = 14;
+        uint8_t mac_dhost[MAC_ADDERSS_SIZE_B];
+        uint8_t mac_shost[MAC_ADDERSS_SIZE_B];
+        uint16_t type;
+        uint8_t *dataUnit;
+
         Frame();
         Frame(unsigned char []);
 
@@ -23,3 +26,4 @@ class Frame{
         uint64_t getMACnumeric(MAC); 
 
 };
+
