@@ -10,17 +10,13 @@ enum class IP{
 };
 
 class Packet{
-    uint8_t *_buffer;
+    uint8_t *buffer;
 
     public:
-
-        static const uint8_t headerSize = 20;
-
-        uint8_t ip_dhost[IPv4_ADDRESS_SIZE_B];
-        uint8_t ip_shost[IPv4_ADDRESS_SIZE_B];
-        uint8_t *dataUnit;
-
+        uint8_t headerSize = 20;
         Packet(uint8_t *);
+
+        uint8_t getheaderSize();
 
         uint8_t getVersion();
         uint8_t getIHL();

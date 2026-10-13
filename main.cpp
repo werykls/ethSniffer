@@ -15,7 +15,7 @@
 #include "TCP.h"
 
 // #define debug
-//#define fileDescriptionManipulations
+// #define fileDescriptionManipulations
 
 int getInterfaces();
 std::string interface;
@@ -102,10 +102,11 @@ int main(int args, char *argv[]){
     int packetNumber = 0;
     ssize_t data_size;
     while(true){
-        //The limiter for packet retriving passed by argv
+        // The limiter for packet retriving passed by argv
         if(packetNumber == packetLimiter)return 0;
 
-        //Receive data from the socket
+
+        // Receive data from the socket
         data_size = recvfrom(raw_socket, buffer, sizeof(buffer), 0, nullptr, nullptr);
         
         
@@ -113,17 +114,17 @@ int main(int args, char *argv[]){
             std::cout << "Failed to receive data" << data_size << std::endl;
             continue;
         }
-
-        //Previously used
-        //Cast the beginning of the buffer to an Ethernet header struct
-        //struct ether_header *eth_hdr = reinterpret_cast<struct ether_header *>(buffer);
+        
+        // Previously used
+        // Cast the beginning of the buffer to an Ethernet header struct
+        // struct ether_header *eth_hdr = reinterpret_cast<struct ether_header *>(buffer);
         
         //Custom object for handling frame's data
         Frame frame = Frame(buffer);
         
         //eth frames basic filtering 
         if(filter == filtering::OUTGOING){
-            if(frame.getMACnumeric(MAC::DESTINATION) == 0 and frame.getMACnumeric(MAC::SOURCE) == 0)continue;
+            if(frame.getMacAddress(MAC::DESTINATION) == 0 and frame.getMacAddress(MAC::SOURCE) == 0)continue;
         }
         std::cout << std::dec;
         std::cout << "\nPakiet nr: " << packetNumber << std::endl;
@@ -133,25 +134,27 @@ int main(int args, char *argv[]){
         
         std::cout << "\nPacket captured! Size: " << data_size << " bytes" << std::endl;
         
-        printDataUnit(buffer, data_size, Frame::headerSize + Packet::headerSize);
+        // printing full data buffer
+        // printDataUnit(buffer, data_size, Frame::headerSize + packet.headerSize);
         
-        Packet packet = Packet(frame.dataUnit);
+        Packet packet = Packet(frame.getDataUnit());
         
         
         
-        //printing frames data 
+        // printing ethernet frames header 
         frame.printDestinationMAC();
         frame.printSourceMAC();
         frame.printFrameType();
         
+        // printing IP packet haeder
         packet.printIPAddress(IP::SOURCE);
         packet.printIPAddress(IP::DESTINATION);
-
-
+        
+        
 
         std::cout << std::hex << "IP packet protocol ID: " << Packet::getProtocolName(packet.getProtocol()) << std::endl;
 
-        TCP tcp = TCP(&buffer[Frame::headerSize + Packet::headerSize]);
+        TCP tcp = TCP(&buffer[Frame::headerSize + packet.headerSize]);
         std::cout << std::dec;
         std::cout << "Source socket nr: " << tcp.getSocketNumber(SOCKET::SOURCE) << std::endl;
         std::cout << "Destination socket nr: " << tcp.getSocketNumber(SOCKET::DESTINATION) << std::endl;

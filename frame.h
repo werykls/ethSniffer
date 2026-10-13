@@ -11,19 +11,17 @@ class Frame{
     uint8_t *buffer;
     public: 
         static const uint8_t headerSize = 14;
-        uint8_t mac_dhost[MAC_ADDERSS_SIZE_B];
-        uint8_t mac_shost[MAC_ADDERSS_SIZE_B];
-        uint16_t type;
-        uint8_t *dataUnit;
 
-        Frame();
-        Frame(unsigned char []);
-
+        Frame(uint8_t *);
+        
+        uint64_t getMacAddress(enum MAC);
+        uint16_t getFrameType();
+        uint8_t * getDataUnit();
+        
         void printDestinationMAC();
         void printSourceMAC();
         void printFrameType();
         
-        uint64_t getMACnumeric(MAC); 
 
 };
 
