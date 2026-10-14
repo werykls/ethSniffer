@@ -34,21 +34,17 @@ uint8_t * Frame:: getDataUnit(){
 }
 
 void Frame::printDestinationMAC(){
-    std::cout << "Destination MAC: " ;
     for (int i = 0; i < 6; i++){
         printf("%02X%s", buffer[i], (i < 5)? ":" : " ");
     }
-    std::cout << std::endl;
 }
 
 void Frame::printSourceMAC(){
-    std::cout << "Source MAC: " ;
     for (int i = 0; i < 6; i++){
         printf("%02X%s", buffer[i + 6], (i < 5)? ":" : " ");
     }
-    std::cout << std::endl;
 }
 
 void Frame::printFrameType(){
-    printf("Protocol/Type : 0x%04X\n", Frame::getFrameType());
+    printf("Type : 0x%04X", Frame::getFrameType());
 }

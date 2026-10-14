@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdint>
 
 #define MAC_ADDERSS_SIZE_B 6

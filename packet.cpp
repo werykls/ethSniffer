@@ -87,7 +87,6 @@ void Packet::printIPAddress(enum IP ipAddessType){
         octet = ipAddress >> 8 * i;
         printf("%u%s", octet, (i != 0)? ":": " ");
     }
-    std::cout << std::endl;
 
 }
 
