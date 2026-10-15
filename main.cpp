@@ -3,10 +3,11 @@
 #include <unistd.h>
 #include <iomanip>
 #include <string.h>
+#include <csignal>
+
 
 //f etching network interfaces names
 #include <ifaddrs.h>
-
 
 
 // Socket handling
@@ -27,12 +28,15 @@
 #include "frame.h"
 #include "packet.h"
 #include "TCP.h"
+#include "lcd.h"
+
+extern int lcdPrintOut(int, int, units);
 
 // #define debug
 // #define fileDescriptionManipulations
 
 void getInterfaces();
-std::string interface;
+std::string interface {"eth0"};
 
 int raw_socket; //socket
 int packetLimiter {0}; // The limit of packets to capture provided by user
@@ -51,9 +55,8 @@ ssize_t dataSize;
 std::atomic<int> packetNumber;
 std::atomic<long> bitRate;
 
-
+enum units unit;
 enum filtering filter;
-
 
 int init(int, char *[]);
 void printDataUnit(uint8_t *,int , int);
@@ -63,23 +66,26 @@ void logPrinter(std::atomic<bool> &);
 void printFrame(int, Frame &, uint8_t *, ssize_t);
 
 int trafficHandler();
+void signalHandler(int);
 
 int main(int args, char *argv[]){
     
     if(int er = init(args, argv))return er;
     
+    void (*prev_handler)(int);
+    prev_handler = signal(SIGINT, signalHandler);
 
     std::cout << "Listening for incoming Ethernet frames..." << std::endl;
     
     std::thread timer_thread(logPrinter, std::ref(programStatus));
 
     while(programStatus){
-        
         trafficHandler();
         
     }
 
-
+    
+    clearLCD();
     timer_thread.join();
     close(raw_socket);
     return 0;
@@ -104,14 +110,20 @@ void getInterfaces()
     return;
 }
 
+void signalHandler(int param){
+    std::cout << "Koniec dzialania programu" << std::endl;
+    programStatus = false;
+}
+
 int init(int args, char *argv[]){
     
     
 
-    getInterfaces();
-    std::cin >> interface;
+    // getInterfaces();
+    // std::cin >> interface;
     
-    
+    lcd_init();
+    sleep(1);
 
     // Create a raw socket to capture all Ethernet frames (ETH_P_ALL)
     // htons() converts the constant to network byte order
@@ -178,8 +190,24 @@ void logPrinter(std::atomic<bool>& status){
     auto nextTick = std::chrono::steady_clock::now();
     
     while(status){
+
+        std::cout << std::setw(10) << std::setfill('-') << std::endl;
+        std::cout << bitRate << std::endl;
+
+
+        if(bitRate >= 0x100000){
+            bitRate = bitRate >> 20; 
+            unit = units::Mb;
+        }
+        else if(bitRate >= 0x0200){
+            bitRate = bitRate >> 10; 
+            unit = units::kb;
+        }
+        else unit = units::b;
+
         nextTick += std::chrono::seconds(1);
-        std::cout << std::dec << packetNumber << "packets/sec; " << bitRate << " bits/sec" << std::endl;
+        std::cout << std::dec << packetNumber << " packets/sec; " << bitRate << ((unit == units::Mb)? " Mb/s" : (unit ==  units::kb)? " kb/s" : " b/s") << std::endl;
+        lcdPrintOut(packetNumber, bitRate, unit);
         packetNumber = 0;
         bitRate = 0;
 
@@ -218,7 +246,7 @@ int trafficHandler(){
         }
         case filtering::SNIFFED: {
             if(frame.getMacAddress(MAC::DESTINATION) == 0 and frame.getMacAddress(MAC::SOURCE) == 0)return 0;
-            if(frame.getMacAddress(MAC::DESTINATION) == 0x2ccf67309277 or frame.getMacAddress(MAC::SOURCE) == 0x2ccf67309277)return 0; 
+            if(frame.getMacAddress(MAC::DESTINATION) == 0x2ccf67309277 or frame.getMacAddress(MAC::SOURCE) == 0x2ccf67309277)return 0;
         }
         case filtering::ALL: {
             break;
@@ -228,8 +256,8 @@ int trafficHandler(){
     packetNumber++;
     bitRate += dataSize;
 
-    std::cout << std::hex << frame.getMacAddress(MAC::DESTINATION) << " | ";
-    std::cout << std::hex << frame.getMacAddress(MAC::SOURCE) << std::endl;
+    // std::cout << std::hex << frame.getMacAddress(MAC::DESTINATION) << " | ";
+    // std::cout << std::hex << frame.getMacAddress(MAC::SOURCE) << std::endl;
 
     // printFrame(packetNumber, frame, buffer, dataSize);
     // printDataUnit(buffer, dataSize, 0);
