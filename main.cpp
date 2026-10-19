@@ -6,7 +6,7 @@
 #include <csignal>
 
 
-//f etching network interfaces names
+//fetching network interfaces names
 #include <ifaddrs.h>
 
 
@@ -23,17 +23,16 @@
 #include <thread>
 
 
+#include "./lib/ETH_IP/frame.h"
+#include "./lib/ETH_IP/packet.h"
+#include "./lib/ETH_IP/TCP.h"
+#include "./lib/LCD/LCD.h"
+#include "./lib/structures.h"
 
-
-#include "frame.h"
-#include "packet.h"
-#include "TCP.h"
-#include "lcd.h"
-
-extern int lcdPrintOut(int, int, units);
 
 // #define debug
-// #define fileDescriptionManipulations
+
+extern void LCD_1IN28_test(void);
 
 void getInterfaces();
 std::string interface {"eth0"};
@@ -42,12 +41,7 @@ int raw_socket; //socket
 int packetLimiter {0}; // The limit of packets to capture provided by user
 std::atomic<bool> programStatus {true};
 
-enum filtering{
-    ALL,
-    OUTGOING,
-    LOOPBACK,
-    SNIFFED
-};
+
 
 // Buffer to hold the incoming packet data
 unsigned char buffer[65536];
@@ -68,10 +62,16 @@ void printFrame(int, Frame &, uint8_t *, ssize_t);
 int trafficHandler();
 void signalHandler(int);
 
+LCD lcd;
+
+
 int main(int args, char *argv[]){
     
     if(int er = init(args, argv))return er;
+
+    lcd.lcdInit();
     
+
     void (*prev_handler)(int);
     prev_handler = signal(SIGINT, signalHandler);
 
@@ -81,11 +81,9 @@ int main(int args, char *argv[]){
 
     while(programStatus){
         trafficHandler();
-        
     }
 
     
-    clearLCD();
     timer_thread.join();
     close(raw_socket);
     return 0;
@@ -112,6 +110,7 @@ void getInterfaces()
 
 void signalHandler(int param){
     std::cout << "Koniec dzialania programu" << std::endl;
+    lcd.clearLCD();
     programStatus = false;
 }
 
@@ -122,8 +121,6 @@ int init(int args, char *argv[]){
     // getInterfaces();
     // std::cin >> interface;
     
-    lcd_init();
-    sleep(1);
 
     // Create a raw socket to capture all Ethernet frames (ETH_P_ALL)
     // htons() converts the constant to network byte order
@@ -169,23 +166,13 @@ int init(int args, char *argv[]){
     }
     
 
-    #ifdef fileDescriptionManipulations
-    // changing socket mode to BLOCKING
-    int flags = fcntl(raw_socket, F_GETFL, 0);
-    std::cout << flags << std::endl;
-    (flags & O_NONBLOCK)?std::cout << "Socket nie blokujacy": std::cout << "Socket blokujacty"; std::cout << std::endl;
-    //(fcntl(raw_socket, F_SETFL, flags bitor O_NONBLOCK) == 0)? std::cout << "udalo sie zmienic" : std::cout << "nie udalo sie zmienic"; std::cout<< std::endl;
-    
-    flags = fcntl(raw_socket, F_GETFL, 0);
-    std::cout << "po zmianie || " << (flags bitor O_NONBLOCK) << std::endl;
-    std::cout << flags << std::endl;
-    (flags & O_NONBLOCK)?std::cout << "Socket nie blokujacy": std::cout << "Socket blokujacty"; std::cout << std::endl;
-    #endif
-
     return 0;
 }
 
 void logPrinter(std::atomic<bool>& status){
+
+
+    // int loopBackSocket = socket(AF_UNIX, SOCK_DGRAM, )
 
     auto nextTick = std::chrono::steady_clock::now();
     
@@ -207,7 +194,9 @@ void logPrinter(std::atomic<bool>& status){
 
         nextTick += std::chrono::seconds(1);
         std::cout << std::dec << packetNumber << " packets/sec; " << bitRate << ((unit == units::Mb)? " Mb/s" : (unit ==  units::kb)? " kb/s" : " b/s") << std::endl;
-        lcdPrintOut(packetNumber, bitRate, unit);
+
+	    lcd.lcdPrintOut(packetNumber, bitRate, unit);
+
         packetNumber = 0;
         bitRate = 0;
 
@@ -262,7 +251,6 @@ int trafficHandler(){
     // printFrame(packetNumber, frame, buffer, dataSize);
     // printDataUnit(buffer, dataSize, 0);
     
-    // We are updating packets counter after filtering out loopback traffic
 
     return 0;
 }
