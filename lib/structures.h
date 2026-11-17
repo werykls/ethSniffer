@@ -1,13 +1,13 @@
 #pragma once
 
-enum filtering{
+enum class filtering{
     ALL,
     OUTGOING,
     LOOPBACK,
     SNIFFED
 };
 
-enum units{
+enum class units{
     b,
     kb,
     Mb

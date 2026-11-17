@@ -4,7 +4,9 @@
 #include <iomanip>
 #include <string.h>
 #include <csignal>
-
+#include <string>
+#include <vector>
+#include <charconv>
 
 //fetching network interfaces names
 #include <ifaddrs.h>
@@ -26,13 +28,11 @@
 #include "./lib/ETH_IP/frame.h"
 #include "./lib/ETH_IP/packet.h"
 #include "./lib/ETH_IP/TCP.h"
-#include "./lib/LCD/LCD.h"
 #include "./lib/structures.h"
 
 
 // #define debug
 
-extern void LCD_1IN28_test(void);
 
 void getInterfaces();
 std::string interface {"eth0"};
@@ -50,7 +50,7 @@ std::atomic<int> packetNumber;
 std::atomic<long> bitRate;
 
 enum units unit;
-enum filtering filter;
+enum filtering filter = filtering::ALL;
 
 int init(int, char *[]);
 void printDataUnit(uint8_t *,int , int);
@@ -62,15 +62,16 @@ void printFrame(int, Frame &, uint8_t *, ssize_t);
 int trafficHandler();
 void signalHandler(int);
 
-LCD lcd;
+void printSeenIP();
 
+std::vector<uint64_t> ignoreIP {};
+
+// SAVING DISCOVERED IP ADRESSES
+std::vector<uint32_t> seenIP {};
 
 int main(int args, char *argv[]){
     
     if(int er = init(args, argv))return er;
-
-    lcd.lcdInit();
-    
 
     void (*prev_handler)(int);
     prev_handler = signal(SIGINT, signalHandler);
@@ -110,13 +111,17 @@ void getInterfaces()
 
 void signalHandler(int param){
     std::cout << "Koniec dzialania programu" << std::endl;
-    lcd.clearLCD();
     programStatus = false;
 }
 
-int init(int args, char *argv[]){
-    
-    
+int init(int argc, char *argv[]){ 
+
+    std::vector<std::string> args(argv, argv + argc);
+
+    if(args[1] == "-h"){
+        std::cout << "help\n";
+        return 1;
+    }
 
     // getInterfaces();
     // std::cin >> interface;
@@ -126,6 +131,7 @@ int init(int args, char *argv[]){
     // htons() converts the constant to network byte order
     raw_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 
+    // Ensuring all packets despite theirs destinational IP address are being send to CPu
     struct packet_mreq mr;
     memset(&mr, 0, sizeof(mr));
     mr.mr_ifindex = if_nametoindex("eth0");
@@ -141,30 +147,50 @@ int init(int args, char *argv[]){
         return 1;
     }
 
-    packetLimiter = std::stoi(argv[2]);
 
-    std::cout << "Filtering mode: ";
-    if(std::string_view(argv[1]) == "ALL"){
-        std::cout << "ALL" << std::endl;
-        filter = filtering::ALL;
-        return 0;
-    }
-    else if(std::string_view(argv[1]) == "OUTGOING"){
-        std::cout << "OUTGOING" << std::endl;
-        filter = filtering::OUTGOING;
-        return 0;
-    }
-    else if(std::string_view(argv[1]) == "LOOPBACK"){
-        std::cout << "LOOPBACK" << std::endl;
-        filter = filtering::LOOPBACK;
-        return 0;
-    }
-    else if(std::string_view(argv[1]) == "SNIFFED"){
-        std::cout << "SNIFFED" << std::endl;
-        filter = filtering::SNIFFED;
-        return 0;
-    }
     
+    //arguments handling
+    for(int i = 1; i < argc; i++){
+        if(args[i] == "-mode"){
+            i++;
+            std::cout << "Filtering mode: ";
+            if(args[i] == "ALL"){
+                std::cout << "ALL" << std::endl;
+                filter = filtering::ALL;
+                continue;
+            }
+            else if(args[i] == "OUTGOING"){
+                std::cout << "OUTGOING" << std::endl;
+                filter = filtering::OUTGOING;
+                continue;
+            }
+            else if(args[i] == "LOOPBACK"){
+                std::cout << "LOOPBACK" << std::endl;
+                filter = filtering::LOOPBACK;
+                continue;
+            }
+            else if(args[i] == "SNIFFED"){
+                std::cout << "SNIFFED" << std::endl;
+                filter = filtering::SNIFFED;
+                continue;
+            }
+        }
+        else if(args[i] == "-limiter"){
+            i++;
+            // debugging argument used to stop process after reading given number of network packets
+            packetLimiter = std::stoi(argv[i]);
+            continue;
+        }
+        else if(args[i] == "-ignoreIP"){
+            while(++i < argc){
+                int ign;
+                std::from_chars(args[i].data(), args[i].data() + args[i].size(), ign);
+                ignoreIP.push_back(ign);
+                
+            }
+        }
+        
+    }
 
     return 0;
 }
@@ -179,14 +205,14 @@ void logPrinter(std::atomic<bool>& status){
     while(status){
 
         std::cout << std::setw(10) << std::setfill('-') << std::endl;
-        std::cout << bitRate << std::endl;
+        std::cout << bitRate << " b/s" << std::endl;
 
 
-        if(bitRate >= 0x100000){
+        if(bitRate >= 1024 * 1024){
             bitRate = bitRate >> 20; 
             unit = units::Mb;
         }
-        else if(bitRate >= 0x0200){
+        else if(bitRate >= 1024){
             bitRate = bitRate >> 10; 
             unit = units::kb;
         }
@@ -195,7 +221,8 @@ void logPrinter(std::atomic<bool>& status){
         nextTick += std::chrono::seconds(1);
         std::cout << std::dec << packetNumber << " packets/sec; " << bitRate << ((unit == units::Mb)? " Mb/s" : (unit ==  units::kb)? " kb/s" : " b/s") << std::endl;
 
-	    lcd.lcdPrintOut(packetNumber, bitRate, unit);
+        
+        printSeenIP();
 
         packetNumber = 0;
         bitRate = 0;
@@ -229,28 +256,55 @@ int trafficHandler(){
     {
         case filtering::OUTGOING: {
             if(frame.getMacAddress(MAC::DESTINATION) == 0 and frame.getMacAddress(MAC::SOURCE) == 0)return 0;
+            break;
         }
         case filtering::LOOPBACK: {
             if(frame.getMacAddress(MAC::DESTINATION) != 0 and frame.getMacAddress(MAC::SOURCE) != 0)return 0;
+            break;
         }
         case filtering::SNIFFED: {
             if(frame.getMacAddress(MAC::DESTINATION) == 0 and frame.getMacAddress(MAC::SOURCE) == 0)return 0;
             if(frame.getMacAddress(MAC::DESTINATION) == 0x2ccf67309277 or frame.getMacAddress(MAC::SOURCE) == 0x2ccf67309277)return 0;
+            break;
         }
         case filtering::ALL: {
             break;
         }
     }
     
+    
     packetNumber++;
     bitRate += dataSize;
-
+    
+    if(frame.getFrameType() == 0x0800){
+        
+        Packet packet = Packet(frame.getDataUnit());
+        // eth frame filtering based on giver -ignoreMAC arguments
+        for(int i = 0; i < ignoreIP.size(); i++){
+            if(packet.getIPAddress(IP::DESTINATION) == ignoreIP[i] or packet.getIPAddress(IP::SOURCE) == ignoreIP[i])return 0;
+        }
+            
+        
+        bool flag = true;
+            for(int i = 0; i < seenIP.size(); i++){
+                if(packet.getIPAddress(IP::DESTINATION) == seenIP[i]){
+                    flag = false;
+                    break;
+                }
+            }
+            // if(flag and ((packet.getIPAddress(IP::DESTINATION) bitand 0xffff0000) == 3232235520) and (((packet.getIPAddress(IP::DESTINATION) bitand 0xff) != 255))){
+            if(flag){
+                seenIP.push_back(packet.getIPAddress(IP::DESTINATION));
+            }
+        }
+        
+    
+    // displaying MAC addresses     
     // std::cout << std::hex << frame.getMacAddress(MAC::DESTINATION) << " | ";
     // std::cout << std::hex << frame.getMacAddress(MAC::SOURCE) << std::endl;
 
     // printFrame(packetNumber, frame, buffer, dataSize);
     // printDataUnit(buffer, dataSize, 0);
-    
 
     return 0;
 }
@@ -297,6 +351,20 @@ void printFrame(int packetNumber, Frame & frame, uint8_t * buffer, ssize_t dataS
 
     std::cout << "\n" << std::setw(250) << std::setfill('-') << std::dec << "\n";
     return;
+}
+
+void printSeenIP(){
+    std::cout << "saved IP addresses:" << seenIP.size() <<   "\n";
+    for(int i = 0; i < seenIP.size(); i++){
+        uint32_t ipAddress = seenIP[i];
+        uint8_t octet;
+        std::cout << std::dec;
+        for(int i = 3; i > -1; i--){
+            octet = ipAddress >> 8 * i;
+            printf("%u%s", octet, (i != 0)? ".": " ");
+        }
+        std::cout << std::endl;
+    }
 }
 
 void printDataUnit(uint8_t buffer[],int dataSize, int startingIndex = 0){
